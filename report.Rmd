@@ -1,0 +1,199 @@
+---
+title: "Learning the manner we perform barbell lifts from wearable devices' data"
+author: "A. C. L."
+date: "July 2015"
+output: html_document
+---
+
+### Introduction
+
+We want to predict the manner in which we perform barbell lifts, based on the data recorded
+from wearable devices such s Jawbone Up, FuelBand and Fitbit etc. (See [1]). In the data set ([1]), the "classe" variable classifies the data into five classes, namely A, B, C, D and E.  The label A indicates the associated exercise is being performed correctly and the other four represent four different types of mistakes. Our work is to develop a classifier via machine learning algorithms 
+given in the ```caret``` R-package. As the quality of the classifier will be assessed by the accuracy of predictions on 20 test cases, we will use *random forests* as the method to construct the classifier (See [3]).
+
+Our work is developed by stages and will be listed in the coming sections.
+
+### Stage A: Exploratory Data Analysis
+
+```{r}
+dat<-read.csv("pml-training.csv")
+test<-read.csv("pml-testing.csv")                   
+dim(dat)
+dim(test)
+```
+
+Note that the number of features (columns) is 160. We will like to reduce it by 
+eliminating some of them that are not relevant to our studies. 
+By consulting the documentation and visual inspection, we may eliminate the first seven columns of the data set (i.e. "X" , "user_name", "raw_timestamp_part_1", [4] "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window").  In addition to eliminating the first seven columns, we like to remove columns with incomplete information. That is, we plan to eliminate columns with entries that are either "NA" or "" (blank) 
+
+### Stage B: Pre-process the data
+
+We will carry out the elimination stated earlier as follows (see [2]):
+
+```{r}
+dat<-read.csv("pml-training.csv", na.strings=c("NA",""))
+dat<-dat[,-c(1:7)]                      ## eliminate the first 7 columns
+dat <- dat[, colSums(is.na(dat)) == 0]  ## elininate columns with "NA" or "" entries
+dim(dat)                                ## the columns represents the features extracted
+```
+
+The data is now named as ```dat```. It has 53 features (including classe) and the number of rows (19622) remains unchanged.
+
+### Stage C: Construct the classifier
+
+We use basic functions from the ```caret``` package to the data for training, 
+testing and cross validation. Our work rely on the ```train``` function from the ```caret``` package to construct the classifier. Our work are:
+
+*  **Split Data**
+
+we sub-divide the pre-processed data ```dat``` into 3 parts: 
+60% for training , 20% for validating  and 20% for testing. 
+They are called ```datTrain```, ```datValid``` and ```datTest``` respectively.
+
+```{r}
+require(caret)
+set.seed(72015)
+## Prepare Training Data
+inTrain<-createDataPartition(y=dat$classe, p=0.6,list=FALSE)
+datTrain<-dat[inTrain,]
+## Prepare Validating and Testing Data
+datNotTrain<-dat[-inTrain,]
+inValid<-createDataPartition(y=datNotTrain$classe,p=0.5,list=FALSE)
+datValid<-datNotTrain[inValid,]
+datTest<-datNotTrain[-inValid,]
+## Examine the size of the splitted data sets 
+dim(datTrain)
+dim(datValid)
+dim(datTest)
+
+```
+
+* **Training the Classifier**
+
+We use the ```train``` function from the ```caret``` package to train the classifier. In particular, we use the random forest method (option ```method="rf"```). It tends to have better accuracy 
+(See comments in [3]) 
+
+Note that *cross validation* are performed within the ```train``` function by setting 
+the option in ```trControl```. In our case, we use *5*-fold cross validation in the 
+training process.  The training calls and the resulting are displayed below:
+
+```{r}
+datTrControl<-trainControl(method="cv", number = 5) ## set train control option for using 
+                                                    ## 5-fold cross validation
+model<-train(classe ~., method="rf", data=datTrain, trControl=datTrControl,
+             ntree = 50, importance = TRUE)         ## apply random forest to get a classifier
+model                                               ## display model optained
+```
+
+
+* **Valdation**
+
+To continue our cross validation work, we will now apply the classifier ```model``` to the Validation data and examine the confusion matrix:
+
+```{r}
+modelValidate<-predict(model,datValid)              ## apply the classifier for validation 
+CMV<-confusionMatrix(datValid$classe,modelValidate)  ## examine the confusion matrix
+CMV$table
+```
+
+* **Estimate Out of Sample Error**
+The confusion matrix shown indicates that reasonable accuracy is acheived when apply the classifier to the validation data.  In addition, the accuracy rate and the estimated out of sample error are:
+
+```{r}
+accuracyRateV <- postResample(datValid$classe,modelValidate)
+accuracyRateV
+outOfSampleError <- 1-accuracyRateV
+outOfSampleError
+```
+
+Both accuracy rate and out of sample error reported seems satisfactory and we continue our work on testing data.
+
+* **Testing**
+
+We apply the classifier ```model``` to the Test data and obtain ```modelTest```. Again we examine the confusion matrix:
+
+
+```{r}
+modelTest<-predict(model,datTest)               ## apply the classifier for testing 
+CMT<-confusionMatrix(datTest$classe,modelTest)  ## examine the confusion matrix
+CMT$table
+```
+
+* **Estimate Out of Sample Error**
+The confusion matrix shown indicates that satisfactory accuracy is acheived when apply the classifier to the testing data. The accuracy rate and the estimated out of sample error in testing are:
+
+```{r}
+accuracyRateT <- postResample(datValid$classe,modelTest)
+accuracyRateT
+outOfSampleError <- 1-accuracyRateT
+outOfSampleError
+```
+Both accuracy rate and out of sample error reported also seems satisfactory.  Hence, we consider the classifier obtained our final classifier and will use it for the twenty test data given in 
+```test```.  Note that the high Kappa values obtained in both validation and testing phase also
+seems to suggest that the classifier obtained should give satisfactory performance for the test data.
+
+
+### Prepare testing results for submission
+
+* **Generate twenty testing results for submission**
+
+We prepare the twenty test data via similar pre-precessing procedures:
+
+```{r}
+twentytest<-read.csv("pml-testing.csv", na.strings=c("NA",""))
+twentytest<-twentytest[,-c(1:7)]
+twentytest <- twentytest[, colSums(is.na(twentytest)) == 0]
+dim(twentytest)
+```
+and compute the answers as follows:
+
+```{r}
+answers<- predict(model, twentytest)
+as.character(answers)
+
+```
+
+### Final remarks
+
+The classifier pass all the twenty test results, according to the evaluation results given online
+and suggests that the classifier obtained is satisfactory in terms of accuracy.
+
+It should be noted that the running time for training the classifier is long.  As future work, we may need to reduce the number of predictors (features). The caret package and others (ex. mlbench)(see [4]) do provide tools for feature selection. For example:
+
+```{r}
+library(randomForest)
+importance <- varImp(model, scale=FALSE)
+```
+rank the ```rf``` variables and the *20*  most important variables are listed below:
+
+```{r}
+print(importance)
+```
+
+We can also examine the following plot:
+
+```{r, out.width = '\\maxwidth', out.height = '\\maxheight'}
+plot(importance)
+```
+
+It seems that additional exploratory work on selection of features is necessary to speed up the model building process. I guess input from domain experts (on barbell lift) in
+selecting a smaller number but significant features may help. 
+
+
+### Acknowledgement
+
+1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+(
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har
+)
+
+2. 
+http://stackoverflow.com/questions/12763890/exclude-blank-and-na-in-r
+
+3. 
+J Leek, Random Forests (slides used in lectures)
+
+4. Jason Brownlee, 
+http://machinelearningmastery.com/feature-selection-with-the-caret-r-package/,
+September 22, 2014 
